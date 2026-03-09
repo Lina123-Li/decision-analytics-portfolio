@@ -1,10 +1,9 @@
 ---
-title: "A2-1"
+title: "A2"
 output:
   word_document: default
   pdf_document:
     latex_engine: xelatex
-date: "2025-03-21"
 ---
 
 ```{r}
@@ -280,3 +279,4 @@ Since the CES 2019 dataset is publicly available, this report does not require R
 # 9 Appendix
 
 Any additional notes/derivations that are supplementary to the report can be added in an appendix. This section will not be directly graded, but may be included for completion-sake.
+
