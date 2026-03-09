@@ -9,6 +9,9 @@ Project Overview：
 
 # Methods
 Stratified sampling estimation
+
 Confidence interval construction
+
 Logistic regression modeling
+
 Model interpretation and prediction
