@@ -1,0 +1,282 @@
+---
+title: "A2-1"
+output:
+  word_document: default
+  pdf_document:
+    latex_engine: xelatex
+date: "2025-03-21"
+---
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(broom)
+
+web_data <- read.csv("ces_web.csv")
+```
+
+# 1 Introduction
+
+**This report uses data from the 2019 Canadian Election Study (CES) web survey to examine voter support for the Liberal Party of Canada in the 2019 federal election.** The primary focus is on education level as a stratification variable, as well as additional numerical predictors such as age. Our analysis aims to estimate the expected voting percentage for the Liberal Party, calculate 95% confidence intervals and build a logistic regression model to predict the likelihood of voting for the Liberal Party based on key demographic factors.
+
+Education is widely recognized as a critical determinant of political ideology and party support, making it a key variable in this study. By using a stratified random sample, the study provides insight into how education level and other factors influence voting behavior in Canada. For political strategists, policymakers, and researchers interested in electoral behavior, understanding these factors that influence voter preferences is crucial.
+
+# 2 Data
+
+The dataset used in this study comes from **the** **2019 Canadian Election Study (CES) web survey**. The survey captures key political behavior variables from a stratified random sample of Canadian voters. In this study, **education level, vote choice**, and **age** were selected as variables, which means that the survey ensures that different education levels and age distributions are represented. This allows us to analyze how education and age affect political preferences, especially voting for the Liberal Party of Canada.
+
+Firstly, we **delete the missing by using filter(!is.na(...))**, including rows with empty cps19_yob (age), cps19_education (education level), and vote_liberal (voting choice). Also, we remove items that have no clear answer by filter() function in the database.
+
+```{r}
+web_data_cleaned <- web_data %>%
+  filter(!is.na(cps19_votechoice), !is.na(cps19_education), !is.na(cps19_yob))
+
+web_data_cleaned <- web_data_cleaned %>%
+  filter(cps19_education <= 11, cps19_votechoice %in% 1:7, cps19_v_likely %in% 1:4)
+```
+
+### **Interpretation of the Dependent and Independent Variables**
+
+#### 1. Dependent Variable：
+
+-   **cps19_votechoice** represents the party therespondent intends to vote for, categorized as 1 for the Liberal Party and other values ​​for different parties. This will be modeled as a binary variable in a logistic regression (Liberal vs. Non-Liberal).
+
+#### 2. Independent Variables：
+
+-   **cps_yob** as a continuous variable representing the age of the respondent. This can more accurately measure the impact of age on voting tendencies and avoid information loss and improve statistical efficiency.
+
+-   **cps19_education** as a stratification variable representing the highest level of education the respondent has. It ranges from no education (1) to a PhD (11). We expect education level to affect voter preferences as I believe higher education is often associated with political ideology.
+
+Use the cleaning methods of **data type conversion** and **category recoding** to assign meaningful labels to the numeric variables of cps19_education and cps19_votechoice to improve subsequent data readability and analysis accuracy.
+
+```{r}
+web_data_cleaned$cps19_education <- factor(web_data_cleaned$cps19_education, 
+                             levels = c(1,2,3,4,5,6,7,8,9,10,11),
+                             labels = c("No Schooling", 
+                                        "Some Elementary", 
+                                        "Completed Elementary", 
+                                        "Some High School", 
+                                        "Completed High School", 
+                                        "Some College", 
+                                        "Completed College", 
+                                        "Some University", 
+                                        "Bachelor’s", 
+                                        "Master’s", 
+                                        "Professional/Doctorate"))
+
+web_data_cleaned$cps19_votechoice <- factor(web_data_cleaned$cps19_votechoice, 
+                             levels = c(1,2,3,4,5,6,7),
+                             labels = c("Liberals", 
+                                        "Conservatives", 
+                                        "NDP", 
+                                        "Bloc Quebec", 
+                                        "Green Party", 
+                                        "People's Party", 
+                                        "Other"))
+```
+
+### Distribution of Education levels
+
+**The bar chart below shows the distribution of Education Levels of the survey respondents.** As can be seen, the most common education levels appear to be a high school graduate, a college degree, and a bachelor's degree. This confirms that education is a stratification variable, ensuring a diverse sample of different education levels. However, there are fewer respondents at lower and higher education levels, which may indicate that the extremes of education are underrepresented.
+
+```{r}
+p_2 <- ggplot(web_data_cleaned, aes(x = cps19_education)) +
+  geom_bar(fill = "red", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Distribution of Education Levels",
+       x = "Education Level",
+       y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+print(p_2)
+```
+
+**Using the case_when() function to reclassify Education Level:**
+
+-   Low: includes No schooling (1) to Completed secondary/high school (5).
+
+-   Medium: includes Some technical/community college (6) to Some university (8).
+
+-   High: includes Bachelor’s degree (9) to Professional degree or doctorate (11).
+
+Reducing the education variable from 11 categories to 3 main levels facilitates comparison and enhances statistical stability, which can more intuitively analyze the voting behavior of different education levels.
+
+```{r}
+web_data_cleaned <- web_data_cleaned %>%
+  mutate(education_level = case_when(
+    cps19_education %in% c("No Schooling", "Some Elementary", "Completed Elementary", "Some High School", "Completed High School") ~ "Low",  
+    cps19_education %in% c("Some College", "Completed College", "Some University") ~ "Medium",
+    cps19_education %in% c( "Bachelor’s", "Master’s", "Professional/Doctorate") ~ "High"))
+
+web_data_cleaned$education_level <- factor(web_data_cleaned$education_level, levels = c("Low", "Medium", "High"))
+
+education_counts <- web_data_cleaned %>% count(education_level)
+
+ggplot(education_counts, aes(x = education_level, y = n, fill = education_level)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Distribution of Education Levels in CES 2019",
+       x = "Education Level",
+       y = "Count") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Low" = "blue", "Medium" = "orange", "High" = "green"))
+```
+
+# 3 Methods
+
+The dataset used in this study comes from the 2019 Canadian Election Study (CES) web survey. In this study, **education level** was selected as a stratification variable, which means that the survey collected responses from different education levels. This allows us to analyze how education affects political preferences, especially voting for the Liberal Party of Canada. To estimate the **proportion of votes** for the **Liberal Party** in the population, we compute a **95% confidence interval (CI)** using the formula:
+
+$$CI=\hat{p} \pm Z_{\alpha/2} \sqrt{\frac{\hat{p}*(\hat{p}-1)}{n}}$$
+
+-   **p\^** is the Sample proportion of votes for the Liberal Party.
+
+-   ​**Z-score** is Critical value from the standard normal distribution for a 95% confidence level.
+
+-   **Standard error (SE) of the proportion**, which accounts for variability in the estimate. $$SE=\sqrt{\frac{\hat{p}*(\hat{p}-1)}{n}}$$
+
+*The confidence interval provides **a range of the proportion of Liberal Party votes** in the population. If the 95% CI is narrow, it suggests higher precision in our estimate.*
+
+## **Logistic Regression Model Specification**
+
+To **predict the likelihood** of voting for the **Liberal Party**, we use a **logistic regression model**. Logistic regression models the **log-odds of an event occurring**. In this case, the probability that a respondent voted for the Liberal Party:​
+
+$$\log(\frac{{P(Y=1)}}{1-P(Y=1)})=\beta_{0}+\beta_{1}*Age+\beta_{2}*Medium Education+\beta_{3}*High Education$$
+
+-   **Log-odds** (logit function), which transforms probabilities into an unbounded range:
+
+$$\log(\frac{{P(Y=1)}}{1-P(Y=1)})$$
+
+-   P(Y=1) : Probability of voting for the Liberal Party.
+
+-   $\beta_0$ : is the intercept, represents the log-odds for the baseline group (low education level, Age = 0).
+
+-   $\beta_1$ : is the coefficient of age, which represents how the log-odds of voting for the Liberal Party change with each increase in age by 1-year.
+
+-   $\beta_2$ : is the coefficient of medium education level, which represents the impact of medium education compared to low education level.
+
+-   $\beta_3$ : is the coefficient of high education level, which represents the impact of high education compared to low education level.
+
+### **Interpretation of Coefficients**
+
+-   Age Coefficient: $\beta_1$
+
+    If $\beta_1$\>0, higher education **increases** the probability of voting Liberal. By contract, if $\beta_1$\<0, higher education **decreases** the probability of voting Liberal. *The indexed value* $e^{\beta_1}$ *represents the multiple changes in the odds of voting for the Liberal Party for every year increase in age.*
+
+-   Education Level Coefficient: $\beta_2,\beta_3$
+
+    If $\beta_2$\>0 or $\beta_3$​\>0, indicates that people with **medium education or high education** is more likely to vote Liberal than those with low education. *The indexed value* $e^{\beta_2},e^{\beta_3}$ *represents the odds multiplier of this education level relative to the lower education level.*
+
+# 4 Results
+
+### Estimated Vote Share with 95% Confidence Interval
+
+```{r}
+liberal_votes <- sum(web_data_cleaned$cps19_votechoice == "Liberals")
+total_votes <- nrow(web_data_cleaned)
+proportion_liberal <- liberal_votes / total_votes
+
+z_score <- qnorm(0.975) 
+se <- sqrt((proportion_liberal * (1 - proportion_liberal)) / total_votes) 
+ci_lower <- proportion_liberal - z_score * se
+ci_upper <- proportion_liberal + z_score * se
+
+result_table <- data.frame(
+  Estimate = c("Proportion of Liberal Votes", "Lower 95% CI", "Upper 95% CI"),
+  Value = c(proportion_liberal, ci_lower, ci_upper))
+result_table
+```
+
+The table below concludes the **standard normal distribution** (mean = 0, standard deviation = 1) and highlights the **95% confidence interval** using **Z-scores**.
+
+| Party         | Estimated Vote Share | 95% CI Lower Bound | 95% CI Upper Bound |
+|---------------|----------------------|--------------------|--------------------|
+| Liberal Party | 0.3358259            | 0.3301517          | 0.3415002          |
+
+The analysis of this study shows that the estimated voting share of the Liberal Party is 33.58%, and the 95% confidence interval is (33.02%, 34.15%). **This means about 33.58% of voters expressed support for the Liberal Party, and we have 95% confidence that the overall voter support rate falls between 33.02% and 34.15%.**
+
+### **Logistic Regression Results**
+
+```{r}
+# Logistic Regression Model
+web_data_cleaned <- web_data_cleaned %>%
+  mutate(liberal_voter = ifelse(cps19_votechoice == "Liberals", 1, 0))
+
+logit_model <- glm(liberal_voter ~ cps19_yob + education_level, data = web_data_cleaned, family = "binomial")
+
+logit_results <- tidy(logit_model, conf.int = TRUE)
+logit_results
+```
+
+|                      | Estimate  | Std.error | Z-value    | P-value      |
+|----------------------|-----------|-----------|------------|--------------|
+| **Intercept**        | -0.716025 | 0.050083  | -14.296807 | 2.290811e-46 |
+| **Age**              | -0.005674 | 0.000786  | -7.213895  | 5.437387e-13 |
+| **Medium Education** | 0.203719  | 0.037010  | 5.491095   | 3.994497e-08 |
+| **High Education**   | 0.599301  | 0.037107  | 16.150459  | 1.127206e-58 |
+
+This result presents the logistic regression estimates for predicting the probability of voting for the Liberal Party.**The logistic regression model further reveals how age (cps19_yob) and education level (education_level) affect the probability of voters voting for the Liberal Party.** The estimated coefficient of the age variable is -0.005674, which indicates that for every 1-year increase in age, the odds of voting for the Liberal Party decrease by 0.567%.
+
+Since the coefficients of logistic regression are log-odds, they are usually converted to odds ratio (OR = $e^{\beta}$). Compared with voters with low education, voters with medium education are 23% more likely to vote for the Liberal Party (OR = $e^{0.2037}$= 1.23), while voters with high education are 82% more likely to vote for the Liberal Party (OR =$e^{0.5993}$= 1.82). The impact of education level shows a positive correlation, that is, the higher the education level, the more likely the voter is to vote for the Liberal Party.
+
+The P values ​​of all variables in the model are less than 0.05, indicating that the impact of age and education level on voting for the Liberal Party is statistically significant. In particular, the z-value of the high education variable (16.150459) is much higher than that of other variables, further confirming the strong influence of education on the support rate of the Liberal Party.
+
+# 5 Discussion
+
+### **Restating the Objective**
+
+This analysis aims to analyze voter support for the Liberal Party of Canada in the 2019 Canadian federal election using data from the 2019 Canadian Election Study (CES) web survey. Given the strong correlation between education and political ideology, education is used as the primary stratification variable, allowing us to analyze how voter preferences vary across educational backgrounds. 95% confidence intervals are calculated for the proportion of voters in the sample who voted for the Liberal Party. A logistic regression model is also built to analyze how education level and age predict the likelihood of voting for the Liberal Party.
+
+### **Summary of Key Findings**
+
+This study analyzes the impact of age and education level on support for the Liberal Party. We estimated the Liberal Party's voting share to be 33.58% and calculated a 95% confidence interval (33.02% , 34.15%), indicating that the Liberal Party's support rate falls roughly within this range. In addition, the logistic regression model shows that increasing age reduces the likelihood of voting for the Liberal Party, while voters with higher education are more likely to support the Liberal Party. These findings are consistent with previous election studies, indicating that the core support group of the Liberal Party is more inclined to young and highly educated voters.
+
+Further analysis shows that the negative effect of age (OR =$e^{-0.00567}$= 0.9943) means that for every additional year, the odds of voting for the Liberal Party decrease by 0.567%. This reflects that older voters are more likely to vote for parties other than the Liberal Party, while younger voters are more likely to support the Liberal Party. This trend is consistent with historical election data and reflects generational differences in voters' political positions.
+
+In addition, people with higher education are 82% more likely to vote for the Liberal Party compared to those with lower education (OR = 1.82). This suggests that voters with a bachelor's degree or higher are more inclined to the policies and values ​​of the Liberal Party. Moreover, the P values ​​of all variables are less than 0.05, indicating that these effects are statistically significant. This means that these variables are indeed related to voting behavior and are not caused by random errors.
+
+### **Limitations and Potential Biases**
+
+This study has some limitations. First, missing data may introduce bias because some respondents did not disclose their voting intentions or education levels, which may distort the results. Second, the survey may have sample bias. For example, young people or those with high education may be underestimated or overestimated in the survey, which affecting the accuracy of the estimate. Third, it may cause Omitted Variable Bias because the analysis only considers education level and age, without considering other key political influences such as income, media or social.
+
+### **Recommendations for Future Research**
+
+Future research can improve the accuracy and applicability of the study by introducing more variables (e.g., income, gender) and using more representative survey methods (e.g., random sampling or post-election surveys). Future research can explore regional differences and study the interaction between education and province to better understand how geography moderates the impact of education on voter preferences. In summary, this study provides data support for understanding the impact of age and education on the Liberal Party vote, and also provides important insights for future election predictions and political strategy formulation.
+
+# 6 Generative AI Statement
+
+For this report, I used the generative AI tool ChatGPT. In the overview section, I organized the entire report, and AI refined the explanation of statistical concepts, such as confidence intervals and survey bias. On top of the original, AI helped me improve the clarity and coherence of my writing. For the R code, I used it to confirm confusing parts of the code to ensure that the final results were what I wanted. In addition, I debugged errors in data cleaning and analysis functions. For the references, I used it to identify textbooks and academic materials related to statistical inference and survey methods, and constructed references to ensure that these materials were properly cited.
+
+To maintain academic integrity and originality, I will manually review and modify the AI-generated content to meet the specific requirements of my critical analysis and the assignment. Independently interpret the survey results and draw original conclusions about how demographic differences, biases, and confidence intervals affect the survey results. Test and modify the R code in RStudio, adjusting it to my dataset to ensure correctness. Write reflections and discussions in my own words, using the AI ​​tool as a supporting guide rather than a content generator. While AI-assisted writing helped organize and refine the content, the critical thinking, interpretation, and final analysis remained my own. This approach ensured that the report truly demonstrated my understanding of the material.
+
+# 7 Ethics Statement
+
+### **Ensuring Reproducibility**
+
+To ensure that this analysis is fully reproducible, we followed best practices in data documentation, statistical modeling, and code transparency. The entire analysis was conducted using well-documented R code, allowing others to replicate the study step by step. The report clearly describes the data cleaning procedures, including handling missing values ​​and transforming categorical variables to ensure consistency in pre-processing. In addition, standard statistical methods were used, such as using the normal approximation of proportions to calculate 95% confidence intervals and applying logistic regression models to analyze voter preferences. To aid interpretation, we provide tables and visualizations that were generated using scripted plots to ensure consistency in future replications of this study.
+
+### **Research Ethics Board (REB) Considerations**
+
+Since the CES 2019 dataset is publicly available, this report does not require Research Ethics Board (REB) approval for public dissemination. However, ethical considerations of participant privacy and confidentiality remain important. The dataset used in this study does not contain personally identifiable information (PII), and all responses are aggregated at the population level. The analysis follows ethical research standards, and this study focuses on voting trends rather than individual behavior. If this research were to extend to nonpublic or personally sensitive data, REB approval would be necessary to protect the privacy of survey users and maintain ethical integrity.
+
+\newpage
+
+# 8 Bibliography
+
+-   **Casella, G., & Berger, R. (2024). *Statistical inference*. CRC press.**
+
+-   **Grolemund, H. W. a. G. (2017). *3 Data visualisation \| R for Data Science*. <https://r4ds.had.co.nz/data-visualisation.html>**
+
+-   **Groves, R. M., Fowler, F. J., Jr, Couper, M. P., Lepkowski, J. M., Singer, E., & Tourangeau, R. (2009). *Survey methodology*. John Wiley & Sons.**
+
+-   **Hilbe, J. M. (2017). *Logistic regression models*. CRC Press.**
+
+-   **Hosmer, D. W., Jr, Lemeshow, S., & Sturdivant, R. X. (2013a). *Applied Logistic Regression*. John Wiley & Sons.**
+
+-   **"Introduction to Probability and Statistics," Mendenhall, Beaver & Beaver (2013).**
+
+-   ***R Console – RStudio User Guide*****. (n.d.). RStudio User Guide. <https://docs.posit.co/ide/user/ide/guide/code/console.html>**
+
+\newpage
+
+# 9 Appendix
+
+Any additional notes/derivations that are supplementary to the report can be added in an appendix. This section will not be directly graded, but may be included for completion-sake.
