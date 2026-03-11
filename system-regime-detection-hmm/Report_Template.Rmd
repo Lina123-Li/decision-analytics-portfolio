@@ -1,0 +1,723 @@
+---
+title: "Market Regime Dynamics and the Role of Investor Sentiment: A Hidden Markov Model Analysis"
+author: "Yujia Li"
+date: "`r Sys.Date()`" #  
+output:
+  pdf_document:
+    latex_engine: xelatex
+spacing: double
+header-includes:
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhead[L]{project Title}
+- \fancyfoot[CO,CE]{}
+- \fancyfoot[LE,RO]{\thepage}
+- \usepackage{setspace}\doublespacing
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(quantmod)
+library(tidyverse)
+library(depmixS4)
+library(lubridate)
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(scales)
+
+suppressPackageStartupMessages(library(quantmod))
+```
+
+\newpage
+
+# **1. Introduction**
+
+Financial markets often display regime switching behavior, typically
+interpreted as transitions between bull markets and bear markets. These
+regimes are not directly observable, but can be inferred from
+time-series dynamics. This motivates the use of the Hidden Markov Model
+(HMM) to infer latent market states.
+
+Hidden Markov Models (HMMs) provide an intuitive way to uncover the
+market patterns we cannot directly see. Following Rabiner’s (1989)
+classic formulation, we use tools like the Forward–Backward and Viterbi
+algorithms to infer how returns today may reflect underlying bull or
+bear conditions. This perspective aligns with Hamilton’s (1989) insight
+that financial and macroeconomic series often shift between distinct
+regimes, each with its own behavior in terms of average returns and
+volatility. To better capture how real-world sentiment shapes these
+shifts, we incorporate Filardo’s (1994) time-varying transition
+probability framework, which allows optimism, fear, or broader market
+signals to influence the likelihood of moving between regimes. All
+parameters, like state means, volatilities, and transition dynamics,
+which are estimated through the EM-based Baum–Welch procedure (Baum et
+al., 1970), ensuring that our identification of bull and bear markets is
+grounded in a coherent and data-driven likelihood approach.
+
+Furthermore, the impact of investor sentiment on industry transformation
+cannot be ignored. This study considers using the VIX (Volatility Index)
+to further infer the potential bull and bear market states in the stock
+market by discussing recent fluctuations in AI-related stocks and
+indices. This study investigates:
+
+1.  Whether stock market dynamics exhibit statistically distinct bull
+    and bear regimes.
+2.  Whether overall market sentiment influences the probability of
+    transitioning between regimes.
+3.  Whether AI-sector-specific sentiment provides additional explanatory
+    power in regime transitions.
+
+# **2. Application and Simualtion**
+
+## **2.1 Data Overview:**
+
+This study uses daily financial and sentiment data from **January 1,
+2020 to the most recent available date**, including the COVID-19 crash,
+the subsequent liquidity-driven recovery, the 2022 tightening cycle, and
+the 2023–2024 AI‐led technology rally. Such a sample provides rich
+variation for identifying latent market regimes in a Hidden Markov Model
+(HMM) framework.
+
+The dataset includes three elements: the S&P 500 (\^GSPC) as the broad
+market benchmark for identifying bull–bear regimes; AI-related assets
+(NVDA, AMD, SOXX) to capture technology and semiconductor sector
+dynamics; and the VIX (\^VIX), which serves as the sentiment indicator
+and key driver of transition probabilities in the TVTP model.
+
+## **2.2 Model Specification**
+
+The two-state Gaussian HMM is defined by:
+
+-   **State-dependent return distribution:**
+    $r_t \mid S_t=i \sim \mathcal{N}(\mu_i,\sigma_i^2), \quad i \in \{1,2\}$
+
+-   **Transition probability matrix:**
+    $p_{ij}​=Pr(S_t​=j∣S_{t−1}​=i), \quad i,j \in \{1,2\}$
+
+-   **Estimation method:** The model parameters $(\mu_i, \sigma_i^2, P)$
+    are estimated using the Baum–Welch Expectation–Maximization (EM)
+    algorithm, the standard procedure for fitting Hidden Markov Models.
+    Because the latent regimes $S_t$​ are unobserved, the likelihood of
+    the observed return series $r_t$​ must integrate over all possible
+    hidden state paths $(S_1,…,S_T)$. This leads to the complete-data
+    likelihood:
+    $L(\theta) = \sum_{S_1,\dots,S_T}    P(S_1) \prod_{t=2}^{T}P(S_t|S_{t-1})    \prod_{t=1}^T P(r_t|S_t, \theta)$.
+    $P(S_1)$ is the initial regime probability, $P(S_t \mid S_{t-1})$ is
+    the regime transition probability, and $P(r_t \mid S_t,\theta)$ is
+    the Gaussian emission density under state $S_t$​. The summation
+    reflects the fact that the hidden regimes are not observed, so the
+    likelihood must consider every possible regime sequence, weighted by
+    its probability under the model. Repeating these steps increases the
+    likelihood at each iteration until convergence. The summation
+    reflects the fact that the hidden regimes are not observed, so the
+    likelihood must consider *every possible regime sequence*, weighted
+    by its probability under the model. This is allowing the HMM to
+    uncover the latent bull and bear regimes that best explain the
+    observed return dynamics.
+
+# **3. Data Analysis**
+
+## **3.1 Identifying Bull and Bear Regimes Using a Two-State Hidden Markov Model**
+
+Financial markets often exhibit alternating periods of sustained growth
+(“bull markets”) and persistent declines (“bear markets”). These states
+are economically meaningful but cannot be directly observed from price
+series alone due to noise, short-term volatility, and structural shocks.
+HMMs provide a natural probabilistic tool for uncovering such latent
+regimes by assuming that returns are generated from state‐dependent
+distributions, while the unobserved state follows a first‐order Markov
+chain. Following Hamilton’s seminal regime-switching model (1989), U.S.
+equity market returns $r_t$ are modeled as:
+$$r_t \mid S_t = i \sim \mathcal{N}(\mu_i, \sigma_i^2), \quad i \in \{1,2\}$$where,
+$r_t$​ is an unobserved state variable. To estimate the baseline HMM
+using **daily log returns of S&P 500 index (\^GSPC).** Computed as:
+$r_t = \log(P_t) - \log(P_{t-1}).$
+
+```{r, results='hide', echo=FALSE}
+symbols <- c("^GSPC")
+getSymbols(symbols, from = "2020-01-01", src = "yahoo")
+ret_sp  <- dailyReturn(Cl(`GSPC`), type = "log")
+data_sp <- tibble(date = index(ret_sp), r = as.numeric(ret_sp))
+set.seed(1234)
+mod_sp <- depmix(response = r ~ 1, data = data_sp, nstates = 2, family = gaussian())
+fit_sp <- fit(mod_sp)
+summary(fit_sp)
+```
+
+|             | Mean   | Standard Deviation |
+|-------------|--------|--------------------|
+| **State 1** | 0.001  | 0.001              |
+| **State 2** | -0.002 | 0.025              |
+
+***(Full Summary table see in Appendix A.1)***
+
+```{r, echo=FALSE, out.width="80%"}
+post_sp <- posterior(fit_sp, type = "smoothing")
+post_df <- as.data.frame(post_sp)
+colnames(post_df) <- paste0("S", 1:ncol(post_df))
+state_hat <- max.col(post_df)
+data_sp <- data_sp |> mutate(state_hat = state_hat,
+                             p_state1  = post_df$S1,p_state2  = post_df$S2)
+ggplot(data_sp, aes(x = date, y = r, fill = factor(state_hat))) +
+  geom_col(alpha = 0.8) + labs(
+    title = "S&P 500 Returns with HMM States", 
+                               fill = "state_hat") + theme_minimal()
+```
+
+Figure 1 (Appendix B.1 includes the full R script): The vertical axis of
+this histogram represents **the magnitude of daily returns**, **showing
+the daily logarithmic returns** of the S&P 500 index. The colors
+indicate the most probable state in the Hidden Markov Model (HMM) for
+that day. **A key feature is that the two colors are not randomly
+distributed**, but rather form clear, persistent intervals: red
+corresponds to periods of low volatility and stability, while blue
+concentrates on phases of significantly increased volatility. The blue
+histogram is significantly wider, reflecting that the volatility of
+state 2 (0.025) is much higher than that of state 1 (0.008), which is
+completely consistent with the model parameters and summary statistics
+above.
+
+Overall, one state consistently exhibits low mean and high volatility
+(bear market characteristics), while the other exhibits high mean and
+low volatility (bull market characteristics). Importantly, these labels
+are not prior settings, but are naturally derived from parameter
+estimates and posterior probabilities. ***Therefore, the results clearly
+demonstrate that statistically identifiable and economically significant
+bull and bear market states do exist in the US stock market, from a
+financial perspective.***
+
+## **3.2 Average and volatility of US stock market returns under different conditions**
+
+Although Section 3.1 reported the estimated state-specific means and
+volatility, point estimates alone cannot determine whether these
+differences are statistically significant. Therefore, **this section
+supplements the estimation results by performing formal hypothesis
+testing (using constrained HMMs and likelihood ratio tests).** It
+involves assessing whether the two states exhibit significantly
+different conditional means and conditional variances.
+
+The fundamental implication of regime-switching models is that returns
+in financial markets exhibit distinct distributional features across
+latent states. **If the HMM truly identifies meaningful bull and bear
+regimes, then their conditional mean returns and conditional
+volatilities should differ statistically.**
+
+### **3.2.1 Empirical and Posterior-Weighted Regime Moment Analysis**
+
+In Section 3.1,
+$μ1 = 0.001>0>μ2=-0.002, \quad then\quadμ1−μ2\approx0.003$, showing a
+sizable shift in return levels across regimes. And
+$\sigma_2(=0.008)\approx 3.1 \times \sigma_1(=0.025)$. This confirms
+that the **State 2 reflects a higher volatility** which is more than
+**triple the daily volatility of State 1**.
+
+To evaluate whether the two market states identified by the Hidden
+Markov Model truly correspond to different market conditions, this
+section will use hard classification and posterior-weighted methods to
+verify whether bull and bear market states have significant economic
+implications.
+
+This method will not rely on the likelihood function, but instead group
+observations according to state and calculate the sample mean and
+standard deviation within each group.
+
+```{r}
+# Sample Statistics After Classifying Each Day into a Regime
+reg_summary <- data_sp %>% group_by(state_hat) %>%
+  summarise(mean_r = mean(r), sd_r = sd(r), n = n())
+reg_summary <- reg_summary %>%
+  mutate(mean_annual = mean_r*252,sd_annual = sd_r*sqrt(252),
+         pct_time = n/sum(n)*100)
+reg_summary
+```
+
+To validate the model inference from a data perspective, a weighted mean
+was further calculated using posterior probabilities:
+
+$$\hat{\mu}_i = \frac{\sum_t p_{ti} \, r_t}{\sum_t p_{ti}}, \quad \hat{\sigma}_i^2 = \frac{\sum_t p_{ti} (r_t - \hat{\mu}_i)^2}{\sum_t p_{ti}}$$
+
+```{r}
+# Posterior-Weighted Empirical Estimates
+data_sp %>% summarise(mean_state1 = weighted.mean(r, p_state1),
+                      mean_state2 = weighted.mean(r, p_state2),
+            sd_state1 = sqrt(weighted.mean((r)^2, p_state1) - mean_state1^2),
+            sd_state2   = sqrt(weighted.mean((r)^2, p_state2) - mean_state2^2))
+```
+
+The parameter estimation of Hidden Markov Models (HMMs) provides
+likelihood-based state characteristics, describing how the model
+theoretically distinguishes different return distributions through mean
+and volatility. To validate these characteristics from a data
+perspective, further employ **hard classification**, assigning each day
+to its most probable state and calculating the sample mean and standard
+deviation **to examine whether the grouped observations show significant
+differences in the actual data**. Simultaneously, **posterior
+weighted**, by preserving the state probability at each time point,
+avoid forced 0/1 classification and **provide a more flexible state
+characterization method consistent with the model structure.** These
+three methods together constitute a validation framework for regime
+characteristics from the three levels of model, data, and probability.
+
+**It is evident that the mean and variance obtained by the three methods
+are very similar,** indicating robust model estimation and clear state
+identification. State 1 (bull market) consistently exhibits higher
+average returns and lower volatility, while State 2 (bear market)
+exhibits lower returns and higher volatility. This suggests that the
+inferred two phases represent economically meaningful bull and bear
+market states, respectively. ***This high degree of consistency
+validates the model's effectiveness in distinguishing between bull and
+bear market states, and also indicates that there are indeed significant
+differences in the mean and volatility between the two phases.***
+
+### **3.2.2 Likelihood Ratio Tests（LRT） for Regime Separation**
+
+To test whether the mean/variance are significantly different. Consider
+a restricted model: force $μ₁ = μ₂$ (same mean), and compare it with the
+original model:
+$$LR = 2(\ell_{\text{unconstrained}} - \ell_{\text{restricted}}),$$if
+the LR value is significant, it indicates that the states are indeed
+different.(Full code see in Appendix A.3)
+
+```{r, include=FALSE}
+# constrained model with common mean
+mod_equal_mu <- depmix(response = r ~ 1, data = data_sp, 
+                       nstates = 2, family = gaussian())
+params <- getpars(fit_sp)
+params[c(1, 3)] <- mean(params[c(1, 3)])
+mod_equal_mu <- setpars(mod_equal_mu, params)
+fit_equal_mu <- fit(mod_equal_mu)
+
+# LR test
+LR <- 2 * (logLik(fit_sp) - logLik(fit_equal_mu))
+p_value <- 1 - pchisq(LR, df = 1) 
+p_value
+```
+
+**The likelihood ratio test strongly rejects the null hypothesis of
+equal means between the two regimes (p = 0.009 \< 0.01),** **and
+conclude that the average returns differ significantly.** In terms of
+volatility, the bear regime exhibits a standard deviation roughly three
+times larger than that of the bull regime. This large gap is clearly
+visible in the descriptive statistics and histograms, so we do not need
+run a separate formal LRT for equal variances again.
+
+### **3.2.3 Visualization of Regime-Dependent Distributions**
+
+The histogram in the chart uses different colors to show the
+distribution of daily returns of the S&P 500 in two implied states.
+
+```{r, echo=FALSE, out.width="80%"}
+ggplot(data_sp, aes(x = r, fill = factor(state_hat))) + 
+  geom_histogram(alpha = 0.4, bins = 60, position = "identity") + 
+  labs(title = "Regime-Dependent Distributions of S&P 500 Returns", 
+       fill = "State") + theme_minimal()
+```
+
+-   **Red: State 1 (Bull Market)**: shows a more concentrated
+    distribution and lower volatility, mainly clustered in a narrow area
+    with returns close to zero, indicating lower daily return
+    volatility. This aligns with the model's identification of a "stable
+    upward trend."
+
+-   **Blue: State 2 (Bear Market)**: shows a more dispersed distribution
+    and more extreme values ​​at both ends of the return spectrum
+    (especially on the negative return side), indicating that the market
+    in this state experiences higher volatility and larger declines.
+
+Figure 2 (Appendix B.2 includes the full R script): ***The histogram
+visually illustrates the significant structural differences between bull
+and bear markets in terms of return direction and risk level.*** The
+estimated HMM parameters, posterior-weighted statistics, and likelihood
+ratio tests all indicate that the two inferred regimes are statistically
+distinct in both mean and volatility. These differences are economically
+intuitive and align with the definitions of bear and bull markets in the
+literature. ***Therefore, the U.S. equity market exhibits clear
+regime-dependent distributional characteristics, validating the HMM’s
+ability to separate meaningful latent market states.***
+
+## **3.3 Does Investor Sentiment Drive Transition Probabilities?**
+
+Consistent with Sections 3.1 & 3.2, $S_t \in \{1,2\}$ denote the latent
+regime at time t, where state 1 is bear regime and state 2 is bull
+regime. The conditional return distribution remains Gaussian as in the
+baseline model:
+$r_t \mid S_t = i \sim \mathcal{N}(\mu_i, \sigma_i^2), \quad i \in \{1,2\}$.
+
+### **3.3.1 TVTP-HMM with VIX**
+
+**The key innovation of TVTP-HMM lies in the fact that the transition
+probabilities are no longer constant.** **It models the transition
+probabilities as a function of the standardized sentiment index**
+$Z_{t-1}$**,** based on Filardo's (1994) covariate dependency transition
+specification and the formula summarized by Zucchini et al. (2016):
+$\text{logit}\big(p_{11}(t)\big) = \alpha_{10} + \alpha_{11} Z_{t-1},\quad \text{logit}\big(p_{22}(t)\big) = \alpha_{20} + \alpha_{21} Z_{t-1}$
+
+**Economic Intuition** **for the coefficients are:**
+
+-   $\alpha_{11} < 0$ : higher VIX (more fear) should **reduce the
+    persistence of bull markets**
+
+-   $\alpha_{21} < 0$ : higher VIX should **increase the probability of
+    exiting bull markets into bear markets**
+
+```{r, warning=FALSE, results='hide', echo=FALSE}
+# Download data
+getSymbols("^VIX", src = "yahoo", from = "2020-01-01")
+vix <- Cl(`VIX`)
+vix_df <- tibble(date = index(vix), vix  = as.numeric(vix)) %>% na.omit
+# Merge with S&P 500 returns data (data_sp from the previous)
+data_tv <- data_sp %>% inner_join(vix_df, by = "date") %>%
+  mutate(vix_std  = as.numeric(scale(vix)),
+         vix_lag1 = dplyr::lag(vix_std, 1)) %>% drop_na(r, vix_lag1)
+# TVTP-HMM: transition depends on lagged VIX
+set.seed(1234)
+mod_tvtp <- depmix(response = r ~ 1, data = data_tv, 
+                   nstates = 2, family = gaussian(), transition = ~ vix_lag1)
+fit_tvtp <- fit(mod_tvtp)
+summary(fit_tvtp)
+```
+
+| Transition (i → j)    | Intercept | Coefficient on lagged VIX (vix_lag1) |
+|-----------------------|-----------|--------------------------------------|
+| **State 1 → State 2** | −2.618516 | **3.183426**                         |
+| **State 2 → State 2** | −1.668077 | **1.481982**                         |
+
+***(Full Summary table see in Appendix A.3)***
+
+In the transition model corresponding to a low-volatility bull market
+(State 1), the VIX coefficient is **positive and relatively large
+(3.18)**. This means that increased market panic reduces the
+sustainability of the bull market, making it easier for the market to
+enter a bear market. The VIX coefficient of bull market (State 2) is
+positive at 1.48, which indicates the stronger the panic, the harder it
+is for the market to escape the bear market. Higher VIX levels enhance
+the persistence of the bear market while reducing the probability of the
+market re-entering a bull market. **The estimated TVTP-HMM provides
+strong evidence that investor sentiment, proxied by lagged VIX, plays a
+significant role in driving regime transitions.**
+
+To verify the relationship between the probability of a bull market and
+the VIX index, we visualize the relationship. To set the **blue line as
+the probability of a bull market**, the **red line as the VIX index**,
+and the **x-axis as dates**.
+
+```{r, warning=FALSE, out.width="80%", echo=FALSE}
+post_tvtp <- posterior(fit_tvtp, type = "smoothing") %>% as.data.frame()
+colnames(post_tvtp) <- c("p_state1", "p_state2")
+data_tv <- data_tv %>% mutate(p_bull_tvtp = post_tvtp$p_state2)
+ggplot(data_tv, aes(x = date)) + 
+  geom_line(aes(y = p_bull_tvtp), color = "blue", size = 0.3) +
+  geom_line(aes(y = rescale(vix, to = c(0, 1))),color = "red", 
+            linetype = "dashed", size = 0.5) + labs(
+              title = "Bull Regime Probability vs. VIX",
+              x = NULL, y = "Probability / Rescaled VIX") + theme_minimal()
+```
+
+Figure 3 (Appendix B.3 includes the full R script): The visual evidence
+shows a sharp and systematic inverse comovement between the bull-regime
+probability and the VIX index. First, **spikes in VIX** (e.g., during
+the COVID-19 crash, the 2022–2023 monetary tightening cycle, or other
+episodes of macro uncertainty) tend to coincide with sharp **declines in
+the bull-regime probability** and more frequent switches into the bear
+regime. This consistents with the idea that fear accelerates regime
+changes. Second, during calmer periods with low VIX, the bull regime
+becomes more persistent, and the state classification from the TVTP
+model is more stable than under the constant-transition specification.
+
+Overall, the VIX not only reflects market volatility but is also a
+significant driver of market state transitions. Its changes are highly
+correlated with investor sentiment, and it accelerates the market's
+shift towards a bear market when uncertainty rises. This pattern aligns
+with the separation of mean and variance in the benchmark HMM, further
+demonstrating the robust economic and statistical significance of
+bull-bear market segmentation.
+
+### **3.3.2 Case Study: AI-Linked Semiconductor Volatility**
+
+The recent surge in artificial intelligence illustrates sentiment-driven
+market dynamics. Since the end of 2022, semiconductor stocks related to
+generative AI, particularly sector ETFs such as **Nvidia (NVDA), AMD,
+and SOXX**, have experienced exceptionally strong gains, followed by
+significant volatility:
+
+-   The Philadelphia Semiconductor Index (SOX), a key benchmark for the
+    sector, **more than tripled** between 2020 and 2024, largely driven
+    by AI-related demand (Moomoo, 2024). Nvidia’s market value briefly
+    exceeded **USD 4 trillion in July 2025**, after its stock price
+    increased roughly tenfold since early 2023, reflecting extreme
+    investor optimism about AI data-center chips.
+
+**Multiple reports indicate rising market concerns about valuation risks
+and industry adjustments**: for example, Vanguard Group warned that the
+AI ​​rally may be subject to a correction due to overly high expectations,
+and research also shows that volatility and bubble signs in AI-related
+stocks are intensifying (Hughes, 2024). **Short-term volatility has
+become more frequent:** the stock prices of Nvidia and AMD fluctuate
+wildly with earnings reports and news from competitors, the stock price
+drops by double digits after news reports about major customers testing
+alternative AI chips (Rose, 2025).
+
+***This path of "excessive optimism followed by sharp fluctuations or
+even a correction" is a typical manifestation of the state switching
+phenomenon that fear indicators such as VIX and TVTP-HMM focus on.***
+
+Based on the existing data_tv (includes S&P 500 returns, VIX, and
+p_bull_tvtp), we will construct an additional simplified "AI
+Semiconductor Basket Returns" code, based on the equal-weighted average
+returns of NVDA, AMD, and SOXX, and then plot it together with the bull
+market probability and VIX.
+
+```{r, include=FALSE}
+# Download & preprocessing data
+symbols_ai <- c("NVDA", "AMD", "SOXX")
+getSymbols(symbols_ai, src = "yahoo", from = "2020-01-01")
+
+prices_ai <- bind_rows(tibble(date = index(Ad(NVDA)), symbol = "NVDA",
+                              price = as.numeric(Ad(NVDA))),
+  tibble(date = index(Ad(AMD)), symbol = "AMD", price = as.numeric(Ad(AMD))),
+  tibble(date  = index(Ad(SOXX)), symbol = "SOXX", price  = as.numeric(Ad(SOXX))))
+
+returns_ai <- prices_ai %>% arrange(symbol, date) %>%    
+  group_by(symbol) %>% mutate(log_price = log(price),
+                              ret = log_price - dplyr::lag(log_price)) %>%
+  ungroup() %>% drop_na(ret)
+
+ai_basket <- returns_ai %>% group_by(date) %>%
+  summarise(ret_ai_eqw = mean(ret),.groups = "drop")
+
+data_tv_ai <- data_tv %>% inner_join(ai_basket, by = "date") %>%
+  mutate(ret_ai_std = as.numeric(scale(ret_ai_eqw)))
+```
+
+```{r, warning=FALSE, out.width="80%", echo=FALSE}
+ggplot(data_tv_ai, aes(x = date)) +
+  geom_line(aes(y = p_bull_tvtp,   color = "Bull probability")) +
+  geom_line(aes(y = rescale(vix),  color = "VIX")) +
+  geom_line(aes(y = rescale(ret_ai_std), color = "AI returns (scaled)")) +
+  scale_color_manual(values = c("Bull probability" = "skyblue", 
+                                "VIX" = "red", "AI returns (scaled)" = "orange")) +
+  labs(title = "Bull Regime Probability, VIX, and AI-Sector Returns",
+       x = NULL, y = "Scaled values (0–1)", color = "") + theme_minimal()
+```
+
+Figure 4 (Appendix B.4 includes the full R script): **The visualization
+reveals a clear transmission mechanism linking AI-sector volatility,
+market sentiment, and regime switching.** Periods of heightened AI-stock
+turbulence coincide with spikes in the VIX and sharp collapses in the
+bull-regime probability, consistent with the TVTP-HMM estimates that
+investor **fear accelerates transitions into the bear regime**. This
+pattern is particularly pronounced during the 2022 tightening cycle and
+the recent AI-driven volatility episodes.
+
+The TVTP-HMM results complement the earlier findings in Sections 3.1 and
+3.2, which established that U.S. equity returns can be meaningfully
+decomposed into bull and bear regimes with distinct mean–variance
+profiles. Section 3.3 confirmed that these differences are statistically
+robust and not an artifact of overfitting a single-regime model.
+Overall, the visual evidence is in line with the regression-based
+results, and supports the hypothesis that **investor sentiment drives
+transition probabilities rather than only affecting within-regime
+volatility**.
+
+# **4. Conclusion**
+
+This study aims to examine whether statistically identifiable bull and
+bear market mechanisms exist in the US stock market, and whether these
+mechanisms exhibit significant differences in returns and volatility. It
+further explores whether investor sentiment drives state transitions.
+
+All models exhibit highly consistent patterns. One class of states is
+characterized by high returns and low volatility, while the other is
+characterized by low returns and high volatility. These patterns
+originate from the data itself, rather than any assumptions, which
+assures us that the "bull market" and "bear market" labels effectively
+reflect different underlying market conditions. The timeline of
+posterior probabilities also closely aligns with several well-known
+events: the sharp volatility of 2020, the uncertainty of the tightening
+cycle in 2022-2023, and the renewed optimism at the end of 2023 driven
+by the growing momentum of AI-related industries.
+
+By incorporating investor sentiment, we gain deeper insights. When we
+allow state transition probabilities to respond to the lagged VIX index,
+periods of higher perceived risk are more likely to see bear market
+transitions (or continuations). This result aligns with the intuition
+that emotion-driven fear and uncertainty push markets towards more
+volatile states.
+
+Overall, Hidden Markov Models provide a powerful framework for
+understanding market evolution over time. The results demonstrate that
+identifying market mechanisms and the emotional forces behind them helps
+in better understanding the shifts in risk, macroeconomic shocks, and
+market sentiment.
+
+\newpage
+
+# References
+
+-   **Baum, L. E., Petrie, T., Soules, G., & Weiss, N. (1970). A
+    maximization technique occurring in the statistical analysis of
+    probabilistic functions of Markov chains. *The Annals of
+    Mathematical Statistics*, *41*(1), 164–171.
+    <https://doi.org/10.1214/aoms/1177697196>**
+
+-   **Filardo, A. J. (1994). Business-Cycle Phases and their
+    transitional dynamics. *ideas.repec.org*.
+    <https://ideas.repec.org/a/bes/jnlbes/v12y1994i3p299-308.html>**
+
+-   **Hamilton, J. D. (1989). A new approach to the economic analysis of
+    nonstationary time series and the business cycle. *Econometrica*,
+    *57*(2), 357. <https://doi.org/10.2307/1912559>**
+
+-   **Hughes, J. (2024, December 4). Wall Street’s AI-powered rally
+    risks ‘correction’, Vanguard warns. *Financial Times*.
+    <https://www.ft.com/content/8b5c4611-0957-4bca-a6e9-ad608c865a64>**
+
+-   **Moomoo. (2024, July 12). *How to choose among the top 10
+    semiconductor ETFs amid the AI
+    wave?*<https://www.moomoo.com/my/learn/detail-semiconductor-etfs-surge-comparing-the-top-10-117239-240770101>**
+
+-   **Rabiner, L. (1989). A tutorial on hidden Markov models and
+    selected applications in speech recognition. *Proceedings of the
+    IEEE*, *77*(2), 257–286. <https://doi.org/10.1109/5.18626>**
+
+-   **Rose, E. (2025, November 25). *AI Stock market uncertainty after
+    Nvidia earnings: Is the bubble at risk?* AI Stock Market Uncertainty
+    After Nvidia Earnings: Is the Bubble at Risk?
+    <https://www.markets.com/analysis/ai-stock-market-uncertainty-after-nvidia-earnings-2665-en>**
+
+\newpage
+
+# **Appendix**
+
+## Appendix A: Supplementary Tables
+
+-   ***Appendix A.1***
+
+```{r}
+symbols <- c("^GSPC")
+getSymbols(symbols, from = "2020-01-01", src = "yahoo")
+ret_sp  <- dailyReturn(Cl(`GSPC`), type = "log")
+data_sp <- tibble(date = index(ret_sp), r = as.numeric(ret_sp))
+set.seed(1234)
+mod_sp <- depmix(response = r ~ 1, data = data_sp, nstates = 2, family = gaussian())
+fit_sp <- fit(mod_sp)
+summary(fit_sp)
+```
+
+-   ***Appendix A.2***
+
+```{r, warning=FALSE}
+# Download data
+getSymbols("^VIX", src = "yahoo", from = "2020-01-01")
+vix <- Cl(`VIX`)
+vix_df <- tibble(date = index(vix), vix  = as.numeric(vix)) %>% na.omit
+# Merge with S&P 500 returns data (data_sp from the previous)
+data_tv <- data_sp %>% inner_join(vix_df, by = "date") %>%
+  mutate(vix_std  = as.numeric(scale(vix)),
+         vix_lag1 = dplyr::lag(vix_std, 1)) %>% drop_na(r, vix_lag1)
+# TVTP-HMM: transition depends on lagged VIX
+set.seed(1234)
+mod_tvtp <- depmix(response = r ~ 1, data = data_tv, 
+                   nstates = 2, family = gaussian(), transition = ~ vix_lag1)
+fit_tvtp <- fit(mod_tvtp)
+summary(fit_tvtp)
+```
+
+-   ***Appendix A.3***
+
+```{r}
+# constrained model with common mean
+mod_equal_mu <- depmix(response = r ~ 1, data = data_sp, 
+                       nstates = 2, family = gaussian())
+params <- getpars(fit_sp)
+params[c(1, 3)] <- mean(params[c(1, 3)])
+mod_equal_mu <- setpars(mod_equal_mu, params)
+fit_equal_mu <- fit(mod_equal_mu)
+
+# LR test
+LR <- 2 * (logLik(fit_sp) - logLik(fit_equal_mu))
+p_value <- 1 - pchisq(LR, df = 1) 
+p_value
+```
+
+## Appendix B: R Code
+
+-   ***Appendix B.1***
+
+```{r}
+# Figure 1: S&P 500 Returns with HMM States
+post_sp <- posterior(fit_sp, type = "smoothing")
+post_df <- as.data.frame(post_sp)
+colnames(post_df) <- paste0("S", 1:ncol(post_df))
+state_hat <- max.col(post_df)
+data_sp <- data_sp |> mutate(state_hat = state_hat,
+                             p_state1  = post_df$S1,p_state2  = post_df$S2)
+ggplot(data_sp, aes(x = date, y = r, fill = factor(state_hat))) +
+  geom_col(alpha = 0.8) + labs(title = "S&P 500 Returns with HMM States", 
+                               fill = "state_hat") + theme_minimal()
+```
+
+-   ***Appendix B.2***
+
+```{r}
+# Figure 2: Regime-Dependent Distributions of S&P 500 Returns
+ggplot(data_sp, aes(x = r, fill = factor(state_hat))) + 
+  geom_histogram(alpha = 0.4, bins = 60, position = "identity") + 
+  labs(title = "Regime-Dependent Distributions of S&P 500 Returns", 
+       fill = "State") + theme_minimal()
+```
+
+-   ***Appendix B.3***
+
+```{r}
+# Figure 3: Bull Regime Probability vs. VIX
+post_tvtp <- posterior(fit_tvtp, type = "smoothing") %>% as.data.frame()
+colnames(post_tvtp) <- c("p_state1", "p_state2")
+data_tv <- data_tv %>% mutate(p_bull_tvtp = post_tvtp$p_state2)
+ggplot(data_tv, aes(x = date)) + 
+  geom_line(aes(y = p_bull_tvtp), color = "blue", size = 0.3) +
+  geom_line(aes(y = rescale(vix, to = c(0, 1))),color = "red", 
+            linetype = "dashed", size = 0.5) + labs(
+              title = "Bull Regime Probability vs. VIX",
+              x = NULL, y = "Probability / Rescaled VIX") + theme_minimal()
+```
+
+-   ***Appendix B.4***
+
+```{r, eval = FALSE}
+# Download & preprocessing data
+symbols_ai <- c("NVDA", "AMD", "SOXX")
+getSymbols(symbols_ai, src = "yahoo", from = "2020-01-01")
+
+prices_ai <- bind_rows(tibble(date = index(Ad(NVDA)), symbol = "NVDA",
+                              price = as.numeric(Ad(NVDA))),
+  tibble(date = index(Ad(AMD)), symbol = "AMD", price = as.numeric(Ad(AMD))),
+  tibble(date  = index(Ad(SOXX)), symbol = "SOXX", price  = as.numeric(Ad(SOXX))))
+
+returns_ai <- prices_ai %>% arrange(symbol, date) %>%    
+  group_by(symbol) %>% mutate(log_price = log(price),
+                              ret = log_price - dplyr::lag(log_price)) %>%
+  ungroup() %>% drop_na(ret)
+
+ai_basket <- returns_ai %>% group_by(date) %>%
+  summarise(ret_ai_eqw = mean(ret),.groups = "drop")
+
+data_tv_ai <- data_tv %>% inner_join(ai_basket, by = "date") %>%
+  mutate(ret_ai_std = as.numeric(scale(ret_ai_eqw)))
+```
+
+```{r}
+# Figure 4: Bull Regime Probability, VIX, and AI-Sector Returns
+ggplot(data_tv_ai, aes(x = date)) +
+  geom_line(aes(y = p_bull_tvtp,   color = "Bull probability")) +
+  geom_line(aes(y = rescale(vix),  color = "VIX")) +
+  geom_line(aes(y = rescale(ret_ai_std), color = "AI returns (scaled)")) +
+  scale_color_manual(values = c("Bull probability" = "skyblue", 
+                                "VIX" = "red", "AI returns (scaled)" = "orange")) +
+  labs(title = "Bull Regime Probability, VIX, and AI-Sector Returns",
+       x = NULL, y = "Scaled values (0–1)", color = "") + theme_minimal()
+```
