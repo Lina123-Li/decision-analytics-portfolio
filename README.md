@@ -3,7 +3,7 @@ This repository contains several projects focused on statistical modeling and de
 
 # Projects
 ## Decision Modeling under Uncertainty
-Application of logistic regression and Bayesian inference.
+Application of Logistic regression and Confidence interval.
 
 ## System Regime Detection
 Hidden Markov Models for detecting latent system states.
