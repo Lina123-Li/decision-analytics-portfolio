@@ -15,3 +15,4 @@ Confidence interval construction
 Logistic regression modeling
 
 Model interpretation and prediction
+ 
